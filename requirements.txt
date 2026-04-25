@@ -1,0 +1,4 @@
+carla==0.9.16
+numpy==2.3.4
+pygame==2.6.1
+setuptools==80.9.0
