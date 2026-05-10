@@ -23,6 +23,9 @@ env/
 
 # CARLA
 run_logs/
+runs/
+checkpoints_dqn/
+checkpoints_dqn_bkp/
 _out/
 
 # OS

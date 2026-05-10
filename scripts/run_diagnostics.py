@@ -61,7 +61,7 @@ def run():
     # Load agent if checkpoint exists
     agent = None
     if LOAD_CHECKPOINT and os.path.exists(LOAD_CHECKPOINT):
-        from carla_app.dqn import dqn as DQN
+        from agents.dqn_waypoints import dqn as DQN
         agent = DQN(env, seed=42)
         agent.load(LOAD_CHECKPOINT)
         print(f"✓ Loaded checkpoint: {LOAD_CHECKPOINT}")

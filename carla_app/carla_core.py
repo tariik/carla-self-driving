@@ -1,12 +1,13 @@
 import os
+import math
 # Forzar software rendering para evitar crash DRI3/EGL en displays remotos
-os.environ['LIBGL_DRI3_DISABLE'] = '1'
-os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
-os.environ['LIBGL_ALWAYS_INDIRECT'] = '1'
-os.environ['SDL_RENDER_DRIVER'] = 'software'
-os.environ.setdefault('SDL_VIDEODRIVER', 'x11')
-os.environ['MESA_GL_VERSION_OVERRIDE'] = '3.3'
-os.environ['__EGL_VENDOR_LIBRARY_FILENAMES'] = ''
+# os.environ['LIBGL_DRI3_DISABLE'] = '1'
+# os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
+# os.environ['LIBGL_ALWAYS_INDIRECT'] = '1'
+# os.environ['SDL_RENDER_DRIVER'] = 'software'
+# os.environ.setdefault('SDL_VIDEODRIVER', 'x11')
+# os.environ['MESA_GL_VERSION_OVERRIDE'] = '3.3'
+# os.environ['__EGL_VENDOR_LIBRARY_FILENAMES'] = ''
 
 import pygame
 import carla
@@ -37,6 +38,33 @@ class CarlaApi:
         self.route_waypoints: Optional[list] = None
 
         self.actors = []
+
+        # Visualization controls for CARLA server viewport (spectator + debug route)
+        self.draw_full_route_each_episode = bool(config.get('draw_full_route_each_episode', True))
+        self.route_draw_life_time = float(config.get('route_draw_life_time', 0.0))
+        self.route_line_thickness = float(config.get('route_line_thickness', 0.15))
+        self.route_draw_all_waypoints = bool(config.get('route_draw_all_waypoints', True))
+        self.route_waypoint_stride = int(config.get('route_waypoint_stride', 1))
+        self.route_waypoint_size = float(config.get('route_waypoint_size', 0.08))
+        self.route_waypoint_z_offset = float(config.get('route_waypoint_z_offset', 0.7))
+        waypoint_color = config.get('route_waypoint_color', (255, 255, 0))
+        self.route_waypoint_color = carla.Color(
+            r=int(waypoint_color[0]),
+            g=int(waypoint_color[1]),
+            b=int(waypoint_color[2])
+        )
+        self.server_top_camera_enabled = bool(config.get('server_top_camera_enabled', True))
+        self.server_top_camera_height = float(config.get('server_top_camera_height', 85.0))
+        self.server_top_camera_pitch = float(config.get('server_top_camera_pitch', -90.0))
+        self.server_top_camera_yaw_offset = float(config.get('server_top_camera_yaw_offset', 0.0))
+        self.server_top_camera_follow = bool(config.get('server_top_camera_follow', False))
+        self.server_top_camera_use_vehicle_yaw = bool(config.get('server_top_camera_use_vehicle_yaw', False))
+        self.server_top_camera_smooth_alpha = float(config.get('server_top_camera_smooth_alpha', 0.2))
+        self.server_top_camera_autofit_route = bool(config.get('server_top_camera_autofit_route', True))
+        self.server_top_camera_fov_deg = float(config.get('server_top_camera_fov_deg', 90.0))
+        self.server_top_camera_margin_m = float(config.get('server_top_camera_margin_m', 25.0))
+        self.server_top_camera_min_height = float(config.get('server_top_camera_min_height', 60.0))
+        self._spectator_last_location = None
 
       
     def connect_to_server(self):
@@ -140,8 +168,8 @@ class CarlaApi:
             end_location = end_location.location
         
         # Generar ruta
-        print(f"Planning route from ({start_location.x:.1f}, {start_location.y:.1f}) "
-            f"to ({end_location.x:.1f}, {end_location.y:.1f})...")
+        # print(f"Planning route from ({start_location.x:.1f}, {start_location.y:.1f}) "
+        #     f"to ({end_location.x:.1f}, {end_location.y:.1f})...")
         
         self.current_route = self.global_route_planner.trace_route(
             start_location, 
@@ -150,8 +178,16 @@ class CarlaApi:
         
         # Extraer solo waypoints
         self.route_waypoints = [wp for wp, _ in self.current_route]
-        
-        print(f"✓ Route planned: {len(self.current_route)} waypoints")
+
+        # Propagar ruta completa al controlador para telemetry/progreso detallado.
+        if self.vehicle_controller is not None:
+            self.vehicle_controller.set_route(
+                self.route_waypoints,
+                route_trace=self.current_route,
+                verbose=self.config.get('print_full_route_on_plan', False)
+            )
+
+        # print(f"✓ Route planned: {len(self.current_route)} waypoints")
         return self.current_route 
     
     def get_route(self):
@@ -171,7 +207,7 @@ class CarlaApi:
         if color is None:
             color = carla.Color(r=255, g=0, b=0)
         
-        print(f"Visualizing route with {len(self.current_route)} waypoints...")
+        # print(f"Visualizing route with {len(self.current_route)} waypoints...")
         
         # Dibujar líneas entre waypoints consecutivos
         for i in range(len(self.current_route) - 1):
@@ -181,10 +217,22 @@ class CarlaApi:
             self.world.debug.draw_line(
                 wp1.transform.location + carla.Location(z=0.5),
                 wp2.transform.location + carla.Location(z=0.5),
-                thickness=0.1,
+                thickness=self.route_line_thickness,
                 color=color,
                 life_time=life_time
             )
+
+        # Dibujar todos los waypoints para visualizar la ruta completa.
+        if self.route_draw_all_waypoints:
+            stride = max(1, self.route_waypoint_stride)
+            for i in range(0, len(self.current_route), stride):
+                wp = self.current_route[i][0]
+                self.world.debug.draw_point(
+                    wp.transform.location + carla.Location(z=self.route_waypoint_z_offset),
+                    size=self.route_waypoint_size,
+                    color=self.route_waypoint_color,
+                    life_time=life_time
+                )
         
         # Marcar inicio y fin
         start_wp, _ = self.current_route[0]
@@ -204,8 +252,88 @@ class CarlaApi:
             life_time=life_time
         )
         
-        print("✓ Route visualization completed")
+        # print("✓ Route visualization completed")
         self.world.tick()
+
+    def update_server_spectator_top_view(self, follow_vehicle=None):
+        """Position CARLA spectator in top-down view to monitor route and ego behavior."""
+        if self.world is None or self.vehicle is None or not self.server_top_camera_enabled:
+            return
+
+        if follow_vehicle is None:
+            follow_vehicle = self.server_top_camera_follow
+
+        spectator = self.world.get_spectator()
+        if spectator is None:
+            return
+
+        # Fixed route overview mode: center and zoom to include complete route.
+        if (not follow_vehicle) and self.server_top_camera_autofit_route and self.route_waypoints:
+            xs = [wp.transform.location.x for wp in self.route_waypoints]
+            ys = [wp.transform.location.y for wp in self.route_waypoints]
+
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+
+            center_x = 0.5 * (min_x + max_x)
+            center_y = 0.5 * (min_y + max_y)
+
+            span_x = max_x - min_x
+            span_y = max_y - min_y
+            required_span = max(span_x, span_y) + 2.0 * self.server_top_camera_margin_m
+
+            fov_deg = max(20.0, min(140.0, self.server_top_camera_fov_deg))
+            half_angle_rad = math.radians(fov_deg * 0.5)
+            required_height = (required_span * 0.5) / max(math.tan(half_angle_rad), 1e-3)
+            final_height = max(self.server_top_camera_min_height, required_height)
+
+            top_transform = carla.Transform(
+                carla.Location(x=center_x, y=center_y, z=final_height),
+                carla.Rotation(
+                    pitch=self.server_top_camera_pitch,
+                    yaw=self.server_top_camera_yaw_offset,
+                    roll=0.0
+                )
+            )
+            spectator.set_transform(top_transform)
+            self._spectator_last_location = carla.Location(center_x, center_y, 0.0)
+            return
+
+        if follow_vehicle:
+            ref_transform = self.vehicle.get_transform()
+            raw_loc = ref_transform.location
+
+            alpha = float(max(0.05, min(1.0, self.server_top_camera_smooth_alpha)))
+            if self._spectator_last_location is None:
+                ref_loc = raw_loc
+            else:
+                ref_loc = carla.Location(
+                    x=(1.0 - alpha) * self._spectator_last_location.x + alpha * raw_loc.x,
+                    y=(1.0 - alpha) * self._spectator_last_location.y + alpha * raw_loc.y,
+                    z=(1.0 - alpha) * self._spectator_last_location.z + alpha * raw_loc.z,
+                )
+
+            if self.server_top_camera_use_vehicle_yaw:
+                yaw = float(ref_transform.rotation.yaw + self.server_top_camera_yaw_offset)
+            else:
+                yaw = self.server_top_camera_yaw_offset
+        else:
+            # Fallback to route middle point if available, else current vehicle location.
+            if self.route_waypoints and len(self.route_waypoints) > 0:
+                mid_idx = len(self.route_waypoints) // 2
+                ref_loc = self.route_waypoints[mid_idx].transform.location
+                yaw = self.server_top_camera_yaw_offset
+            else:
+                ref_loc = self.vehicle.get_location()
+                yaw = self.server_top_camera_yaw_offset
+
+            self._spectator_last_location = carla.Location(ref_loc.x, ref_loc.y, ref_loc.z)
+
+        top_transform = carla.Transform(
+            carla.Location(x=ref_loc.x, y=ref_loc.y, z=ref_loc.z + self.server_top_camera_height),
+            carla.Rotation(pitch=self.server_top_camera_pitch, yaw=yaw, roll=0.0)
+        )
+        spectator.set_transform(top_transform)
     def get_distance_to_goal(self):
         """Calcula la distancia del vehículo al punto objetivo."""
         if self.vehicle is None or self.route_waypoints is None:
