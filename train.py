@@ -16,8 +16,8 @@ if __name__ == '__main__':
   
 
     # 🔥 PARÁMETROS DE ENTRENAMIENTO
-    n_episodes = 100000  # Más episodios para aprender
-    max_t = 600       # Steps por episodio
+    n_episodes = 50000  # Más episodios para aprender
+    max_t = 800       # Steps por episodio
     eps_start = 1.0   # ✅ FIX: Empezar con exploración completa
     eps_decay = 0.9995
     eps_end = 0.01
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     EXPECTED_STEPS_PER_EP = 100  # más largo con speed cap a 80 km/h
     realistic_total_steps = n_episodes * EXPECTED_STEPS_PER_EP
     epsilon_by_step = make_epsilon_by_step(realistic_total_steps,
-                                       eps_start=0.10,
+                                       eps_start=0.50,
                                        eps_mid=0.05,
                                        eps_end=0.01,
                                        frac1=0.025,
@@ -79,6 +79,7 @@ if __name__ == '__main__':
             episode_info = None
             
             for t in range(max_t):
+
                 # Select action
                 global_step += 1
 

@@ -26,6 +26,8 @@ run_logs/
 runs/
 checkpoints_dqn/
 checkpoints_dqn_bkp/
+checkpoints_dqn_bkp2/
+checkpoints_dqn2/
 _out/
 
 # OS

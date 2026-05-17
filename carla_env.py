@@ -47,7 +47,7 @@ class CarlaEnv(gym.Env):
         self.initial_spawn_point = None
         self.route_waypoints_count = 0
         self.last_route_index = 0
-        self.reward_mode = str(self.config.get('reward_mode', 'stable')).lower()
+        self.reward_mode = str(self.config.get('reward_mode', 'curve_aware')).lower()
         self.random_route_enabled = bool(self.config.get('random_route_enabled', True))
         self.max_random_route_distance = float(self.config.get('max_random_route_distance', 200.0))
         self.min_random_route_distance = float(self.config.get('min_random_route_distance', 50.0))
